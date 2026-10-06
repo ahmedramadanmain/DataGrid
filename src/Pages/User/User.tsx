@@ -344,7 +344,6 @@ const User = () => {
 
           <span className="text-sm text-default-500">
             {filteredUsers.length}
-            {filteredUsers.length === 1 ? "user" : "users"}
           </span>
         </div>
 
