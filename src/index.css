@@ -1,0 +1,7 @@
+@import "tailwindcss";
+@import "@heroui/styles"; 
+
+:root{
+    --main-color:#F4F7FB;
+
+}
