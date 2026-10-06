@@ -1,27 +1,23 @@
-import { Checkbox, Table, type SortDescriptor } from "@heroui/react";
-
-import React, {
-  useCallback,
+import { Checkbox, Table } from "@heroui/react";
+import {
   useEffect,
   useMemo,
-  useRef,
   useState,
   type Key,
   type ReactNode,
 } from "react";
 
-import { sortItems, type SortValue } from "../../utils/SortItems";
-
 export interface IDataGridColumn<T> {
   key: string;
   label: string;
-  sortable?: boolean;
   render?: (item: T) => ReactNode;
-  sortValue?: (item: T) => SortValue;
-  isRowHeader?: boolean;
 }
 
-export type SelectionMode = "none" | "single" | "multiple" | "all";
+export type SelectionMode =
+  | "none"
+  | "single"
+  | "multiple"
+  | "all";
 
 interface IDataGridProps<T> {
   data: T[];
@@ -29,144 +25,90 @@ interface IDataGridProps<T> {
   getRowId: (item: T) => string | number;
   selectionMode?: SelectionMode;
   getRowLabel?: (item: T) => string;
-  defaultSort?: SortDescriptor;
   onSelectionChange?: (selectedIds: Set<string>) => void;
   className?: string;
   emptyMessage?: string;
-  sortDescriptor?: SortDescriptor;
-  onSortChange?: (descriptor: SortDescriptor) => void;
 }
 
-const readValue = <T,>(item: T, column: IDataGridColumn<T>): SortValue => {
-  if (column.sortValue) {
-    return column.sortValue(item);
-  }
-
-  return (item as unknown as Record<string, unknown>)[column.key] as SortValue;
-};
-
-const setsEqual = (a: Set<string>, b: Set<string>) =>
-  a.size === b.size && [...a].every((value) => b.has(value));
-
-function DataGridInner<T>({
+function DataGrid<T>({
   data,
   columns,
   getRowId,
   selectionMode = "none",
   getRowLabel,
-  defaultSort,
   onSelectionChange,
   className = "min-w-[900px]",
   emptyMessage = "No data found.",
-  sortDescriptor: controlledSortDescriptor,
-  onSortChange,
 }: IDataGridProps<T>) {
-
-  const isControlledSort = controlledSortDescriptor !== undefined;
-
-  const [internalSortDescriptor, setInternalSortDescriptor] =
-    useState<SortDescriptor>(
-      defaultSort ?? {
-        column:
-          columns.find((column) => column.sortable !== false)?.key ?? "",
-        direction: "ascending",
-      },
-    );
-
-  const sortDescriptor = controlledSortDescriptor ?? internalSortDescriptor;
-
-  const handleSortChange = useCallback(
-    (descriptor: SortDescriptor) => {
-      if (!isControlledSort) {
-        setInternalSortDescriptor(descriptor);
-      }
-
-      onSortChange?.(descriptor);
-    },
-    [isControlledSort, onSortChange],
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
+    new Set(),
   );
 
-  const rows = useMemo(() => {
-    if (isControlledSort) {
-      return data;
-    }
-
-    const column = columns.find((col) => col.key === sortDescriptor.column);
-
-    if (!column) {
-      return data;
-    }
-
-    return sortItems(
-      data,
-      (item) => readValue(item, column),
-      sortDescriptor.direction,
-    );
-  }, [data, columns, sortDescriptor, isControlledSort]);
-
-  /*
-   * Selection
-   */
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
-  const selectedRef = useRef<Set<string>>(new Set());
-
-  const onSelectionChangeRef = useRef(onSelectionChange);
-
-  useEffect(() => {
-    onSelectionChangeRef.current = onSelectionChange;
-  }, [onSelectionChange]);
-
-  const updateSelection = useCallback((next: Set<string>) => {
-    selectedRef.current = next;
-    setSelectedKeys(next);
-    onSelectionChangeRef.current?.(next);
-  }, []);
-
-  const allKeys = useMemo(
+  const rowKeys = useMemo(
     () => new Set(data.map((item) => String(getRowId(item)))),
     [data, getRowId],
   );
 
   useEffect(() => {
-    const current = selectedRef.current;
-    let next: Set<string>;
-
     if (selectionMode === "none") {
-      next = new Set();
-    } else if (selectionMode === "all") {
-      next = new Set(allKeys);
-    } else {
-      next = new Set([...current].filter((key) => allKeys.has(key)));
+      setSelectedKeys(new Set());
+      return;
+    }
 
-      if (selectionMode === "single" && next.size > 1) {
-        next = new Set([[...next][0]]);
+    if (selectionMode === "all") {
+      const allKeys = new Set(rowKeys);
+
+      setSelectedKeys(allKeys);
+      onSelectionChange?.(allKeys);
+      return;
+    }
+
+    setSelectedKeys((currentKeys) => {
+      const validKeys = new Set(
+        [...currentKeys].filter((key) => rowKeys.has(key)),
+      );
+
+      if (selectionMode === "single" && validKeys.size > 1) {
+        const firstKey = validKeys.values().next().value;
+
+        return firstKey
+          ? new Set([firstKey])
+          : new Set();
       }
-    }
 
-    if (!setsEqual(next, current)) {
-      updateSelection(next);
-    }
-  }, [selectionMode, allKeys, updateSelection]);
+      return validKeys;
+    });
+  }, [selectionMode, rowKeys, onSelectionChange]);
 
   const handleSelectionChange = (keys: "all" | Set<Key>) => {
     if (keys === "all") {
-      updateSelection(new Set(allKeys));
+      const allKeys = new Set(rowKeys);
+
+      setSelectedKeys(allKeys);
+      onSelectionChange?.(allKeys);
+
       return;
     }
 
-    const nextKeys = new Set([...keys].map(String));
+    const selectedKeys = new Set(
+      [...keys].map(String),
+    );
 
     if (selectionMode === "single") {
-      const added = [...nextKeys].filter(
-        (key) => !selectedRef.current.has(key),
-      );
-      const picked = added.at(-1) ?? [...nextKeys].at(-1);
+      const selectedKey = [...selectedKeys].at(-1);
 
-      updateSelection(picked ? new Set([picked]) : new Set());
+      const nextKeys = selectedKey
+        ? new Set([selectedKey])
+        : new Set<string>();
+
+      setSelectedKeys(nextKeys);
+      onSelectionChange?.(nextKeys);
+
       return;
     }
 
-    updateSelection(nextKeys);
+    setSelectedKeys(selectedKeys);
+    onSelectionChange?.(selectedKeys);
   };
 
   return (
@@ -174,8 +116,6 @@ function DataGridInner<T>({
       <Table.ScrollContainer>
         <Table.Content
           className={className}
-          sortDescriptor={sortDescriptor}
-          onSortChange={handleSortChange}
           selectionMode={
             selectionMode === "none"
               ? "none"
@@ -203,18 +143,12 @@ function DataGridInner<T>({
               </Table.Column>
             )}
 
-            {columns.map((column, index) => (
+            {columns.map((column) => (
               <Table.Column
                 key={column.key}
                 id={column.key}
-                allowsSorting={column.sortable !== false}
-                isRowHeader={column.isRowHeader ?? index === 0}
               >
-                {({ sortDirection }) => (
-                  <Table.SortableColumnHeader sortDirection={sortDirection}>
-                    {column.label}
-                  </Table.SortableColumnHeader>
-                )}
+                {column.label}
               </Table.Column>
             ))}
           </Table.Header>
@@ -226,7 +160,7 @@ function DataGridInner<T>({
               </div>
             )}
           >
-            {rows.map((item) => {
+            {data.map((item) => {
               const id = String(getRowId(item));
 
               return (
@@ -234,7 +168,10 @@ function DataGridInner<T>({
                   {selectionMode !== "none" && (
                     <Table.Cell className="pe-0">
                       <Checkbox
-                        aria-label={getRowLabel?.(item) ?? `Select row ${id}`}
+                        aria-label={
+                          getRowLabel?.(item) ??
+                          `Select row ${id}`
+                        }
                         slot="selection"
                         variant="secondary"
                       >
@@ -251,7 +188,11 @@ function DataGridInner<T>({
                     <Table.Cell key={column.key}>
                       {column.render
                         ? column.render(item)
-                        : String(readValue(item, column) ?? "")}
+                        : String(
+                            (item as Record<string, unknown>)[
+                              column.key
+                            ] ?? "",
+                          )}
                     </Table.Cell>
                   ))}
                 </Table.Row>
@@ -263,7 +204,5 @@ function DataGridInner<T>({
     </Table>
   );
 }
-
-const DataGrid = React.memo(DataGridInner) as typeof DataGridInner;
 
 export default DataGrid;
